@@ -1,0 +1,400 @@
+/* ── Reset & Base ── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --c-bg: #f4f5f7;
+  --c-surface: #ffffff;
+  --c-border: #d1d5db;
+  --c-border-light: #e5e7eb;
+  --c-primary: #2563eb;
+  --c-primary-hover: #1d4ed8;
+  --c-success: #16a34a;
+  --c-success-hover: #15803d;
+  --c-danger: #dc2626;
+  --c-danger-bg: #fef2f2;
+  --c-danger-border: #fecaca;
+  --c-text: #1f2937;
+  --c-text-secondary: #6b7280;
+  --c-text-muted: #9ca3af;
+  --radius: 10px;
+  --radius-sm: 6px;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.10);
+  --max-w: 680px;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  background: var(--c-bg);
+  color: var(--c-text);
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+/* ── App shell ── */
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.app-header {
+  text-align: center;
+  padding: 2rem 1rem 1rem;
+}
+
+.app-header h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.subtitle {
+  color: var(--c-text-secondary);
+  font-size: 0.95rem;
+  margin-top: 0.25rem;
+}
+
+.app-main {
+  flex: 1;
+  width: 100%;
+  max-width: var(--max-w);
+  margin: 0 auto;
+  padding: 0 1rem 2rem;
+}
+
+.app-footer {
+  text-align: center;
+  padding: 1rem;
+  color: var(--c-text-muted);
+  font-size: 0.8rem;
+}
+
+.app-footer p + p {
+  margin-top: 0.25rem;
+}
+
+/* ── Upload zone ── */
+.upload-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.upload-zone {
+  width: 100%;
+  border: 2px dashed var(--c-border);
+  border-radius: var(--radius);
+  padding: 3rem 2rem;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  background: var(--c-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.upload-zone:hover {
+  border-color: var(--c-primary);
+  background: #f8faff;
+}
+
+.upload-zone.drag-over {
+  border-color: var(--c-primary);
+  background: #eef4ff;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+.upload-icon {
+  color: var(--c-primary);
+  margin-bottom: 0.75rem;
+}
+
+.upload-text {
+  font-size: 1.05rem;
+  font-weight: 500;
+  color: var(--c-text);
+}
+
+.upload-hint {
+  font-size: 0.85rem;
+  color: var(--c-text-muted);
+  margin-top: 0.35rem;
+}
+
+/* ── Cards ── */
+.card {
+  background: var(--c-surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.25rem;
+}
+
+.card h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  color: var(--c-text);
+}
+
+/* ── File card ── */
+.file-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.file-card-body {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.file-icon {
+  flex-shrink: 0;
+  display: flex;
+}
+
+.file-details {
+  min-width: 0;
+}
+
+.file-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-meta {
+  font-size: 0.82rem;
+  color: var(--c-text-secondary);
+}
+
+/* ── Rules ── */
+.rules-card ul {
+  list-style: none;
+  padding: 0;
+}
+
+.rules-card li {
+  position: relative;
+  padding-left: 1.25rem;
+  font-size: 0.9rem;
+  color: var(--c-text-secondary);
+  line-height: 1.7;
+}
+
+.rules-card li::before {
+  content: '•';
+  position: absolute;
+  left: 0.35rem;
+  color: var(--c-primary);
+  font-weight: 700;
+}
+
+/* ── Messages ── */
+.msg {
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
+  width: 100%;
+}
+
+.msg-error {
+  background: var(--c-danger-bg);
+  border: 1px solid var(--c-danger-border);
+  color: var(--c-danger);
+}
+
+/* ── Preview ── */
+.preview-card {
+  width: 100%;
+}
+
+.preview-grid {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.preview-item {
+  flex: 1 1 200px;
+  max-width: 320px;
+  text-align: center;
+}
+
+.preview-label {
+  display: inline-block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--c-text-secondary);
+  margin-bottom: 0.5rem;
+  padding: 0.15rem 0.6rem;
+  border-radius: 4px;
+  background: #f3f4f6;
+}
+
+.preview-item img {
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--c-border-light);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+}
+
+.preview-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+  border: 1px dashed var(--c-border);
+  border-radius: var(--radius-sm);
+  color: var(--c-text-muted);
+  font-size: 0.9rem;
+}
+
+.preview-arrow {
+  flex-shrink: 0;
+  color: var(--c-text-muted);
+  display: flex;
+  align-items: center;
+}
+
+/* ── Tool section vertical flow ── */
+.tool-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* ── Actions ── */
+.action-bar {
+  text-align: center;
+  padding: 0.5rem 0;
+}
+
+/* ── Buttons ── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 0.5rem 1rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s, box-shadow 0.15s, opacity 0.15s;
+  line-height: 1.4;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-ghost {
+  background: transparent;
+  border-color: var(--c-border);
+  color: var(--c-text-secondary);
+  font-weight: 500;
+}
+
+.btn-ghost:hover {
+  background: #f9fafb;
+  border-color: var(--c-text-muted);
+}
+
+.btn-primary {
+  background: var(--c-primary);
+  color: #fff;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--c-primary-hover);
+}
+
+.btn-success {
+  background: var(--c-success);
+  color: #fff;
+}
+
+.btn-success:hover:not(:disabled) {
+  background: var(--c-success-hover);
+}
+
+.btn-lg {
+  padding: 0.7rem 2rem;
+  font-size: 1rem;
+  border-radius: var(--radius);
+  min-width: 200px;
+}
+
+/* ── Spinner ── */
+.btn-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.spinner {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 2.5px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Responsive ── */
+@media (max-width: 520px) {
+  .app-header h1 {
+    font-size: 1.4rem;
+  }
+
+  .preview-grid {
+    flex-direction: column;
+  }
+
+  .preview-arrow {
+    transform: rotate(90deg);
+  }
+
+  .upload-zone {
+    padding: 2rem 1rem;
+  }
+
+  .file-card {
+    flex-wrap: wrap;
+  }
+
+  .btn-lg {
+    width: 100%;
+    min-width: 0;
+  }
+}
