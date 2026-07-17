@@ -1,21 +1,25 @@
 import { useState, useRef, useCallback } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import JSZip from 'jszip';
 
-// ── pdf.js worker setup (Vite resolves & copies the worker file at build time) ──
+// ── pdf.js worker setup ──
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
   import.meta.url,
 ).href;
 
 // ── Constants ──
-const BOTTOM_MARGIN_MM = 3;       // text baseline from page bottom edge
-const ALIGN_RIGHT_MARGIN_PT = 18; // fixed right margin (~product title position for this label)
+const BOTTOM_MARGIN_MM = 3;
+const ALIGN_RIGHT_MARGIN_PT = 18;
 const FONT_SIZE = 7;
 const LABEL_TEXT = 'Made In China';
-const PREVIEW_TARGET_WIDTH = 320; // px
+const PREVIEW_TARGET_WIDTH = 280;
 
 const mmToPt = (mm) => mm * 72 / 25.4;
+
+let uidCounter = 0;
+const uid = () => `u${++uidCounter}`;
 
 // ── Helpers ──
 function formatSize(bytes) {
@@ -24,7 +28,7 @@ function formatSize(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** Render the first page of a PDF (bytes → Uint8Array) to a data-URL at a given display width. */
+/** Render first page to a data-URL. */
 async function renderFirstPage(bytes, targetWidth = PREVIEW_TARGET_WIDTH) {
   const doc = await pdfjsLib.getDocument({ data: bytes.slice(0) }).promise;
   try {
@@ -43,85 +47,57 @@ async function renderFirstPage(bytes, targetWidth = PREVIEW_TARGET_WIDTH) {
   }
 }
 
-/** Use pdf-lib to add the MADE IN CHINA label to every page.
- *
- *  Strategy: create a fresh PDF, copy all pages from the source into it,
- *  then draw the label.  This avoids issues with certain PDF structures
- *  (object streams, XFA, etc.) that can break round-trip preservation. */
+/** Process one PDF: add label. */
 async function addLabelToPdf(originalBytes) {
-  // Load the source document to read its pages
-  const sourceDoc = await PDFDocument.load(originalBytes.slice(0), {
-    ignoreEncryption: true,
-  });
-
+  const sourceDoc = await PDFDocument.load(originalBytes.slice(0), { ignoreEncryption: true });
   const pageCount = sourceDoc.getPageCount();
-  if (pageCount === 0) {
-    throw new Error('PDF 中没有页面');
-  }
+  if (pageCount === 0) throw new Error('PDF 中没有页面');
 
-  // Create a fresh document and copy all pages
   const newDoc = await PDFDocument.create();
-  const pageIndices = sourceDoc.getPageIndices();
-  const copiedPages = await newDoc.copyPages(sourceDoc, pageIndices);
-
+  const pages = await newDoc.copyPages(sourceDoc, sourceDoc.getPageIndices());
   const font = await newDoc.embedFont(StandardFonts.Helvetica);
 
-  for (let i = 0; i < copiedPages.length; i++) {
-    const page = copiedPages[i];
+  for (const page of pages) {
     newDoc.addPage(page);
-
     const { width: pageWidth } = page.getSize();
     const textWidth = font.widthOfTextAtSize(LABEL_TEXT, FONT_SIZE);
-    // Align text's right edge to the fixed right margin (matches product title
-    // position for common FBA label sizes; falls back near right edge on other sizes)
     const targetRight = pageWidth - ALIGN_RIGHT_MARGIN_PT;
-    const x = targetRight - textWidth;
-    const y = mmToPt(BOTTOM_MARGIN_MM);
-
     page.drawText(LABEL_TEXT, {
-      x,
-      y,
+      x: targetRight - textWidth,
+      y: mmToPt(BOTTOM_MARGIN_MM),
       size: FONT_SIZE,
       font,
       color: rgb(0, 0, 0),
     });
   }
-
-  // Disable object streams for maximum viewer compatibility
   return newDoc.save({ useObjectStreams: false });
 }
 
-// ── Sub-components (kept in one file for this focused tool) ──
-
-function UploadZone({ onFile }) {
+// ═══════════════════════════════════════════════════════════════════
+//  UploadZone  (accepts multiple files)
+// ═══════════════════════════════════════════════════════════════════
+function UploadZone({ onFiles }) {
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef(null);
 
-  const handleDrop = useCallback((e) => {
-    e.preventDefault();
-    setDragOver(false);
-    const f = e.dataTransfer.files[0];
-    if (f) onFile(f);
-  }, [onFile]);
-
-  const handleChange = useCallback((e) => {
-    const f = e.target.files[0];
-    if (f) onFile(f);
-    e.target.value = ''; // allow re-select same file
-  }, [onFile]);
+  const add = useCallback((fileList) => {
+    const files = Array.from(fileList).filter(f =>
+      f.name.toLowerCase().endsWith('.pdf') && f.type !== 'text/plain' && f.size > 0
+    );
+    if (files.length) onFiles(files);
+  }, [onFiles]);
 
   return (
     <div
       className={`upload-zone${dragOver ? ' drag-over' : ''}`}
       onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
       onDragLeave={() => setDragOver(false)}
-      onDrop={handleDrop}
+      onDrop={(e) => { e.preventDefault(); setDragOver(false); add(e.dataTransfer.files); }}
       onClick={() => inputRef.current?.click()}
-      role="button"
-      tabIndex={0}
+      role="button" tabIndex={0}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') inputRef.current?.click(); }}
     >
-      <input ref={inputRef} type="file" accept=".pdf" onChange={handleChange} hidden />
+      <input ref={inputRef} type="file" accept=".pdf" multiple onChange={(e) => { add(e.target.files); e.target.value = ''; }} hidden />
       <div className="upload-icon">
         <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -130,214 +106,193 @@ function UploadZone({ onFile }) {
         </svg>
       </div>
       <p className="upload-text">点击或拖拽 PDF 文件到此处</p>
-      <p className="upload-hint">仅支持 .pdf 格式，文件不上传服务器</p>
+      <p className="upload-hint">支持批量选择多个文件，全部处理在浏览器本地完成</p>
     </div>
   );
 }
 
-// ── Main App ──
-
+// ═══════════════════════════════════════════════════════════════════
+//  Main App
+// ═══════════════════════════════════════════════════════════════════
 export default function App() {
-  const [file, setFile] = useState(null);
-  const [fileBytes, setFileBytes] = useState(null);
-  const [fileInfo, setFileInfo] = useState(null);    // { name, size, pageCount }
-  const [origPreview, setOrigPreview] = useState(null);
-  const [procPreview, setProcPreview] = useState(null);
-  const [procBytes, setProcBytes] = useState(null);
-  const [processing, setProcessing] = useState(false);
+  const [uploads, setUploads] = useState([]);
+  const [batchProcessing, setBatchProcessing] = useState(false);
   const [error, setError] = useState(null);
 
-  const reset = useCallback(() => {
-    setFile(null);
-    setFileBytes(null);
-    setFileInfo(null);
-    setOrigPreview(null);
-    setProcPreview(null);
-    setProcBytes(null);
-    setProcessing(false);
+  // ── Add files ──
+  const handleAddFiles = useCallback(async (files) => {
     setError(null);
-  }, []);
+    const entries = files.map(f => ({
+      id: uid(),
+      file: f,
+      bytes: null,
+      info: null,
+      origPreview: null,
+      procBytes: null,
+      procPreview: null,
+      error: null,
+      processing: false,
+      status: 'pending',    // pending | processing | done | error
+    }));
+    setUploads(prev => [...prev, ...entries]);
 
-  /** Validate and load a dropped/selected file. */
-  const handleFile = useCallback(async (f) => {
-    setError(null);
-    setProcBytes(null);
-    setProcPreview(null);
-
-    if (!f.name.toLowerCase().endsWith('.pdf') || f.type === 'text/plain') {
-      setError('请选择一个有效的 PDF 文件');
-      return;
-    }
-    if (f.size === 0) {
-      setError('文件为空，请选择有效的 PDF 文件');
-      return;
-    }
-
-    try {
-      const bytes = await f.arrayBuffer();
-      // Store an independent copy of the bytes so no other consumer
-      // (pdfjs worker, etc.) can transfer/detach the underlying buffer.
-      const uint8 = new Uint8Array(bytes);
-      const copy = uint8.slice(0);
-      setFileBytes(copy);
-
-      // MUST load pdf first and get all metadata BEFORE setting file,
-      // otherwise React renders the tool section with null fileInfo → crash
-      const doc = await pdfjsLib.getDocument({ data: copy.slice(0) }).promise;
-      const pageCount = doc.numPages;
-      const info = { name: f.name, size: f.size, pageCount };
-      setFileInfo(info);
-
-      const previewUrl = await renderFirstPage(copy);
-      setOrigPreview(previewUrl);
-      doc.destroy();
-      setFile(f); // <-- set file LAST, after all data is ready
-    } catch (err) {
-      console.error('Load error:', err);
-      setError('无法读取 PDF 文件，文件可能已损坏或加密');
-      // reset everything (setFile was never called if error was before it)
-      setFile(null);
-      setFileBytes(null);
-      setFileInfo(null);
-      setOrigPreview(null);
+    // Load each in background (parse with pdfjs for info + preview)
+    for (const entry of entries) {
+      try {
+        const ab = await entry.file.arrayBuffer();
+        const bytes = new Uint8Array(ab).slice(0);
+        const doc = await pdfjsLib.getDocument({ data: bytes.slice(0) }).promise;
+        const pageCount = doc.numPages;
+        const info = { name: entry.file.name, size: entry.file.size, pageCount };
+        const preview = await renderFirstPage(bytes);
+        doc.destroy();
+        setUploads(prev => prev.map(u =>
+          u.id === entry.id ? { ...u, bytes, info, origPreview: preview } : u
+        ));
+      } catch (err) {
+        console.error('Load error:', entry.file.name, err);
+        setUploads(prev => prev.map(u =>
+          u.id === entry.id ? { ...u, error: '无法读取 PDF，文件可能已损坏或加密', status: 'error' } : u
+        ));
+      }
     }
   }, []);
 
-  /** Process the PDF: add label to every page. */
-  const handleGenerate = useCallback(async () => {
-    if (!fileBytes) return;
-    setProcessing(true);
+  // ── Remove one ──
+  const handleRemove = useCallback((id) => {
+    setUploads(prev => prev.filter(u => u.id !== id));
+  }, []);
+
+  // ── Clear all ──
+  const handleClearAll = useCallback(() => {
+    setUploads([]);
     setError(null);
+    setBatchProcessing(false);
+  }, []);
 
-    try {
-      const outBytes = await addLabelToPdf(fileBytes);
-      setProcBytes(outBytes);
+  // ── Process all pending ──
+  const handleProcessAll = useCallback(async () => {
+    setError(null);
+    const pending = uploads.filter(u => u.status === 'pending' && u.bytes);
+    if (!pending.length) return;
 
-      const previewUrl = await renderFirstPage(outBytes);
-      setProcPreview(previewUrl);
-    } catch (err) {
-      console.error('Processing error:', err);
-      setError('处理 PDF 时出错' + (err.message ? '：' + err.message : '，请确认文件未加密且格式正确'));
-    } finally {
-      setProcessing(false);
+    setBatchProcessing(true);
+    // Mark all as processing
+    setUploads(prev => prev.map(u =>
+      u.status === 'pending' && u.bytes ? { ...u, processing: true, status: 'processing' } : u
+    ));
+
+    for (const entry of pending) {
+      try {
+        const outBytes = await addLabelToPdf(entry.bytes);
+        let preview = null;
+        try { preview = await renderFirstPage(outBytes); } catch {}
+        setUploads(prev => prev.map(u =>
+          u.id === entry.id
+            ? { ...u, procBytes: outBytes, procPreview: preview, processing: false, status: 'done' }
+            : u
+        ));
+      } catch (err) {
+        console.error('Process error:', entry.file.name, err);
+        setUploads(prev => prev.map(u =>
+          u.id === entry.id
+            ? { ...u, error: '处理失败：' + (err.message || '未知错误'), processing: false, status: 'error' }
+            : u
+        ));
+      }
     }
-  }, [fileBytes]);
+    setBatchProcessing(false);
+  }, [uploads]);
 
-  /** Download the processed PDF. */
-  const handleDownload = useCallback(() => {
-    if (!procBytes) return;
-    const baseName = file.name.replace(/\.pdf$/i, '');
-    const blob = new Blob([procBytes], { type: 'application/pdf' });
+  // ── Download one ──
+  const handleDownloadOne = useCallback((entry) => {
+    if (!entry.procBytes) return;
+    const baseName = entry.file.name.replace(/\.pdf$/i, '');
+    const blob = new Blob([entry.procBytes], { type: 'application/pdf' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `${baseName}-made-in-china.pdf`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [procBytes, file]);
+  }, []);
 
+  // ── Download all as ZIP ──
+  const handleDownloadAll = useCallback(async () => {
+    const done = uploads.filter(u => u.status === 'done' && u.procBytes);
+    if (!done.length) return;
+
+    const zip = new JSZip();
+    for (const entry of done) {
+      const baseName = entry.file.name.replace(/\.pdf$/i, '');
+      zip.file(`${baseName}-made-in-china.pdf`, entry.procBytes);
+    }
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `made-in-china-labels.zip`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [uploads]);
+
+  // ── Derived counts ──
+  const pendingCount = uploads.filter(u => u.status === 'pending' && u.bytes).length;
+  const doneCount = uploads.filter(u => u.status === 'done').length;
+  const hasAnyUpload = uploads.length > 0;
+  const hasAnyDone = doneCount > 0;
+
+  // ── Render ──
   return (
     <div className="app">
       <header className="app-header">
         <h1>FBA 标签工具</h1>
-        <p className="subtitle">为 PDF 每页底部添加「MADE IN CHINA」标识</p>
+        <p className="subtitle">为 PDF 每页右下角添加 Made In China 标识</p>
       </header>
 
       <main className="app-main">
-        {!file ? (
+        {!hasAnyUpload ? (
           <section className="upload-section">
-            <UploadZone onFile={handleFile} />
+            <UploadZone onFiles={handleAddFiles} />
             {error && <div className="msg msg-error">{error}</div>}
           </section>
         ) : (
           <section className="tool-section">
-            {/* ── File info ── */}
-            <div className="card file-card">
-              <div className="file-card-body">
-                <span className="file-icon">
-                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                    <polyline points="14 2 14 8 20 8" />
-                    <line x1="16" y1="13" x2="8" y2="13" />
-                    <line x1="16" y1="17" x2="8" y2="17" />
-                  </svg>
-                </span>
-                <div className="file-details">
-                <div className="file-name">{fileInfo?.name}</div>
-                  <div className="file-meta">{fileInfo?.pageCount ?? '?'} 页 · {formatSize(fileInfo?.size ?? 0)}</div>
-                </div>
-              </div>
-              <button className="btn btn-ghost" onClick={reset}>清除</button>
-            </div>
+            {/* ── Upload zone (compact, for adding more) ── */}
+            <UploadZone onFiles={handleAddFiles} />
 
-            {/* ── Rules ── */}
-            <div className="card rules-card">
-              <h3>添加规则</h3>
-              <ul>
-                <li>文字：<strong>Made In China</strong>（区分大小写）</li>
-                <li>位置：每页右下角，与产品标题右对齐，距下边缘 3 mm</li>
-                <li>字体：Helvetica（<strong>不加粗</strong>），7 pt，黑色</li>
-                <li>范围：PDF 全部页面</li>
-                <li>其他：保留原 PDF 所有内容与页面尺寸</li>
-              </ul>
+            {/* ── Action bar ── */}
+            <div className="action-bar">
+              {pendingCount > 0 && (
+                <button className="btn btn-primary btn-lg" onClick={handleProcessAll} disabled={batchProcessing}>
+                  {batchProcessing ? (
+                    <span className="btn-loading"><span className="spinner" />处理中…</span>
+                  ) : (
+                    `处理全部 (${pendingCount} 个)`
+                  )}
+                </button>
+              )}
+              {hasAnyDone && (
+                <button className="btn btn-success btn-lg" onClick={handleDownloadAll}>
+                  下载全部 ({doneCount} 个)
+                </button>
+              )}
+              <button className="btn btn-ghost" onClick={handleClearAll}>清除全部</button>
             </div>
 
             {/* ── Error ── */}
             {error && <div className="msg msg-error">{error}</div>}
 
-            {/* ── Preview ── */}
-            <div className="card preview-card">
-              <h3>预览（第 1 页）</h3>
-              <div className="preview-grid">
-                <div className="preview-item">
-                  <span className="preview-label">原文件</span>
-                  {origPreview ? (
-                    <img src={origPreview} alt="原始 PDF 第 1 页" />
-                  ) : (
-                    <div className="preview-placeholder">加载中…</div>
-                  )}
-                </div>
-                <div className="preview-arrow">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="5" y1="12" x2="19" y2="12" />
-                    <polyline points="12 5 19 12 12 19" />
-                  </svg>
-                </div>
-                <div className="preview-item">
-                  <span className="preview-label">处理后</span>
-                  {procPreview ? (
-                    <img src={procPreview} alt="处理后 PDF 第 1 页" />
-                  ) : (
-                    <div className="preview-placeholder">
-                      {processing ? '处理中…' : '等待生成'}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* ── Action ── */}
-            <div className="action-bar">
-              {!procBytes ? (
-                <button
-                  className="btn btn-primary btn-lg"
-                  onClick={handleGenerate}
-                  disabled={processing}
-                >
-                  {processing ? (
-                    <span className="btn-loading">
-                      <span className="spinner" />
-                      处理中…
-                    </span>
-                  ) : (
-                    '生成标签 PDF'
-                  )}
-                </button>
-              ) : (
-                <button className="btn btn-success btn-lg" onClick={handleDownload}>
-                  下载 PDF
-                </button>
-              )}
+            {/* ── File list ── */}
+            <div className="file-list">
+              {uploads.map(entry => (
+                <FileCard
+                  key={entry.id}
+                  entry={entry}
+                  onRemove={handleRemove}
+                  onDownload={handleDownloadOne}
+                />
+              ))}
             </div>
           </section>
         )}
@@ -345,21 +300,87 @@ export default function App() {
 
       <footer className="app-footer">
         <p>所有处理在浏览器本地完成，文件不会上传至任何服务器</p>
-        <p className="footer-pages">
-          {fileInfo && (
-            <>
-              共 {fileInfo.pageCount} 页
-              {procBytes && (
-                <>
-                  · 已处理全部页面
-                  · 输出 {formatSize(procBytes.length)}
-                  {fileBytes && `（原 ${formatSize(fileBytes.length)}）`}
-                </>
-              )}
-            </>
-          )}
-        </p>
+        {hasAnyUpload && (
+          <p className="footer-pages">
+            共 {uploads.length} 个文件，{doneCount} 个已处理
+          </p>
+        )}
       </footer>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  FileCard (single file row)
+// ═══════════════════════════════════════════════════════════════════
+function FileCard({ entry, onRemove, onDownload }) {
+  const [expanded, setExpanded] = useState(false);
+  const { file, info, origPreview, procPreview, status, error: fileErr, processing } = entry;
+
+  const statusIcon = () => {
+    if (status === 'error') return <span className="badge badge-error">错误</span>;
+    if (status === 'processing') return <span className="badge badge-processing">处理中…</span>;
+    if (status === 'done') return <span className="badge badge-done">已完成</span>;
+    return <span className="badge badge-pending">待处理</span>;
+  };
+
+  return (
+    <div className={`file-card${status === 'error' ? ' file-card--error' : ''}`}>
+      <div className="file-card-main" onClick={() => setExpanded(!expanded)}>
+        <div className="file-card-body">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+          </svg>
+          <div className="file-details">
+            <div className="file-name">{file.name}</div>
+            <div className="file-meta">
+              {info ? `${info.pageCount} 页 · ${formatSize(info.size)}` : '加载中…'}
+            </div>
+          </div>
+        </div>
+        <div className="file-card-actions">
+          {statusIcon()}
+          {status === 'done' && (
+            <button className="btn btn-small btn-success" onClick={(e) => { e.stopPropagation(); onDownload(entry); }}>
+              下载
+            </button>
+          )}
+          <button className="btn btn-small btn-ghost" onClick={(e) => { e.stopPropagation(); onRemove(entry.id); }}>
+            ✕
+          </button>
+        </div>
+      </div>
+
+      {/* Preview (expandable) */}
+      {expanded && (origPreview || procPreview) && (
+        <div className="file-card-preview">
+          <div className="preview-grid">
+            {origPreview && (
+              <div className="preview-item">
+                <span className="preview-label">原文件</span>
+                <img src={origPreview} alt="原始" />
+              </div>
+            )}
+            {origPreview && <div className="preview-arrow">→</div>}
+            {procPreview ? (
+              <div className="preview-item">
+                <span className="preview-label">处理后</span>
+                <img src={procPreview} alt="处理后" />
+              </div>
+            ) : (
+              status === 'processing' && (
+                <div className="preview-item">
+                  <span className="preview-label">处理后</span>
+                  <div className="preview-placeholder">处理中…</div>
+                </div>
+              )
+            )}
+          </div>
+        </div>
+      )}
+
+      {fileErr && <div className="msg msg-error" style={{ margin: '0.5rem 0 0' }}>{fileErr}</div>}
     </div>
   );
 }
